@@ -139,10 +139,25 @@ def identify(y, sr, database, song_names, params=None):
 
 
 def load_audio_from_bytes(file_bytes, sr=SR):
-    """
-    Load audio from raw bytes (e.g. an uploaded file in Streamlit)
-    into a mono numpy array at the target sample rate.
-    """
     import io
-    y, _ = librosa.load(io.BytesIO(file_bytes), sr=sr, mono=True)
+    try:
+        y, _ = librosa.load(io.BytesIO(file_bytes), sr=sr, mono=True)
+        return y
+    except Exception:
+        return _load_audio_via_ffmpeg(file_bytes, sr=sr)
+
+
+def _load_audio_via_ffmpeg(file_bytes, sr=SR):
+    import subprocess
+    import numpy as np
+
+    cmd = [
+        "ffmpeg", "-i", "pipe:0",
+        "-f", "f32le", "-ac", "1", "-ar", str(sr),
+        "-loglevel", "error", "pipe:1",
+    ]
+    proc = subprocess.run(cmd, input=file_bytes, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed to decode audio: {proc.stderr.decode(errors='ignore')}")
+    y = np.frombuffer(proc.stdout, dtype=np.float32)
     return y
